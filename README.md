@@ -6,7 +6,7 @@ A command-line tool to fetch data (open ports, CVEs, CPEs, ...) from [Shodan int
 ## Installation
 
 ```
-go install -v github.com/s4hm4d/shodanidb
+go install -v github.com/s4hm4d/shodanidb@latest
 ```
 
 
