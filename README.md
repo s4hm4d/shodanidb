@@ -22,6 +22,7 @@ Options:
   -nt           Hide tags
   -nv           Hide vulnerabilities
   -nocolor      Disable color in output
+  -json         Save output to JSON format
 
 
 Examples:
