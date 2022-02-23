@@ -13,6 +13,8 @@ import (
 	"sync"
 
 	"github.com/logrusorgru/aurora"
+	"github.com/projectdiscovery/iputil"
+	"github.com/projectdiscovery/mapcidr"
 )
 
 type Response struct {
@@ -44,34 +46,39 @@ func main() {
 	var jsonFile string
 	flag.StringVar(&jsonFile, "json", "", "Save output to JSON format")
 
+	var verbose bool
+	flag.BoolVar(&verbose, "v", false, "Verbose")
+
 	flag.Parse()
 
 
-	var ips []string
+	var inputs, targets []string
 
 	if flag.NArg() > 0 {
-		ips = []string{flag.Arg(0)}
+		inputs = []string{flag.Arg(0)}
 	} else {
 		sc := bufio.NewScanner(os.Stdin)
 		for sc.Scan() {
-			ips = append(ips, sc.Text())
+			inputs = append(inputs, sc.Text())
 		}
 		if err := sc.Err(); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to read input: %s\n", err)
 		}
 	}
 
+	targets = loadTargets(inputs, verbose)
+
 	channel := make(chan Response)
 	var wg sync.WaitGroup
 
-	for i := 0; i < len(ips); i++ {
+	for i := 0; i < len(targets); i++ {
 		wg.Add(1)
 
 		i := i
 
 		go func() {
 			defer wg.Done()
-			jsonData := getData(ips[i])
+			jsonData := getData(targets[i], verbose)
 			channel <- jsonData
 		}()
 
@@ -87,26 +94,57 @@ func main() {
 		return
 	}
 
-	for i := 0; i < len(ips); i++ {
+	for i := 0; i < len(targets); i++ {
 		printResult(<-channel, noCPEs, noHostnames, noTags, noVulns, noColor)
 	}
 }
 
 
-func getData(ip string) Response {
+func loadTargets(inputs []string, verbose bool) []string {
+
+	var targets []string
+
+	for _, target := range inputs {
+		if iputil.IsCIDR(target) {
+			cidrIps, err := mapcidr.IPAddresses(target)
+			if err != nil {
+				if verbose {
+					log.Printf("Couldn't parse CIDR!\n")
+				}
+				return []string{}
+			}
+			for _, ip := range cidrIps {
+				targets = append(targets, ip)
+			}
+		} else {
+			targets = append(targets, target)
+		}
+	}
+
+	return targets
+}
+
+
+func getData(ip string, verbose bool) Response {
 
 	res, err := http.Get(
 		fmt.Sprintf("https://internetdb.shodan.io/%s", ip),
 	)
 
 	if err != nil {
-		log.Fatalf("Couldn't connect to the server!")
+		if verbose {
+			log.Printf("Couldn't connect to the server! (%s)", ip)
+			log.Printf("%s\n", err)
+		}		
 		return Response{}
 	}
 
 	raw, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		log.Fatalf("Couldn't read the data!")
+		if verbose {
+			log.Printf("Couldn't read the data from %s", ip)
+			log.Printf("%s\n", raw)
+		}
 		return Response{}
 	}
 
@@ -116,7 +154,10 @@ func getData(ip string) Response {
 	err = json.Unmarshal(raw, &jsonData)
 
 	if err != nil {
-		log.Fatalf("The data is incorrect!")
+		if verbose {
+			log.Printf("The data from %s is incorrect!", ip)
+			log.Printf("%s\n", raw)
+		}
 		return Response{}
 	}
 

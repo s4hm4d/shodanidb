@@ -23,6 +23,7 @@ Options:
   -nv           Hide vulnerabilities
   -nocolor      Disable color in output
   -json         Save output to JSON format
+  -v            Verbose mode
 
 
 Examples:
@@ -30,6 +31,7 @@ Examples:
   echo [ip] | shodanidb -nt
   cat ips.txt | shodanidb -nh
   cat ips.txt | shodanidb -json output.json
+  cat 8.8.8.0/24 | shodanidb
 ```
 
 
