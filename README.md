@@ -28,6 +28,7 @@ Options:
 Examples:
   echo [ip] | shodanidb -nt
   cat ips.txt | shodanidb -nh
+  cat ips.txt | shodanidb -json output.json
 ```
 
 
