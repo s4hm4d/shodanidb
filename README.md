@@ -26,6 +26,7 @@ Options:
 
 
 Examples:
+  shodanidb [ip]
   echo [ip] | shodanidb -nt
   cat ips.txt | shodanidb -nh
   cat ips.txt | shodanidb -json output.json
@@ -34,4 +35,4 @@ Examples:
 
 ## Credit
 
-The original tool is [nrich](https://gitlab.com/shodan-public/nrich). I wanted to learn Go and write this tool with Go for practise.
+The original tool is [nrich](https://gitlab.com/shodan-public/nrich). I wanted to learn Go and write this tool with Go for practice.
