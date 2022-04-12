@@ -68,7 +68,7 @@ func main() {
 
 	targets = loadTargets(inputs, verbose)
 
-	channel := make(chan Response)
+	channel := make(chan Response, 10)
 	var wg sync.WaitGroup
 
 	for i := 0; i < len(targets); i++ {
@@ -77,25 +77,23 @@ func main() {
 		i := i
 
 		go func() {
-			defer wg.Done()
-			jsonData := getData(targets[i], verbose)
+			jsonData := getData(&wg, targets[i], verbose)
 			channel <- jsonData
 		}()
-
 	}
 
-	go func() {
-		wg.Wait()
-		close(channel)
-	}()
+	if jsonFile == "" {
+		for i := 0; i < len(targets); i++ {
+			printResult(<-channel, noCPEs, noHostnames, noTags, noVulns, noColor)
+		}
+	}
+
+	wg.Wait()
+	close(channel)
 
 	if jsonFile != "" {
 		saveJson(channel, jsonFile)
 		return
-	}
-
-	for i := 0; i < len(targets); i++ {
-		printResult(<-channel, noCPEs, noHostnames, noTags, noVulns, noColor)
 	}
 }
 
@@ -125,7 +123,9 @@ func loadTargets(inputs []string, verbose bool) []string {
 }
 
 
-func getData(ip string, verbose bool) Response {
+func getData(wg *sync.WaitGroup, ip string, verbose bool) Response {
+
+	defer wg.Done()
 
 	res, err := http.Get(
 		fmt.Sprintf("https://internetdb.shodan.io/%s", ip),
