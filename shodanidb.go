@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"reflect"
 
 	"github.com/logrusorgru/aurora"
 	"github.com/projectdiscovery/iputil"
@@ -49,6 +50,9 @@ func main() {
 	var verbose bool
 	flag.BoolVar(&verbose, "v", false, "Verbose")
 
+	var compareFile string
+	flag.StringVar(&compareFile, "compare", "", "Compare data with a JSON file")
+
 	flag.Parse()
 
 
@@ -82,19 +86,110 @@ func main() {
 		}()
 	}
 
-	if jsonFile == "" {
+	if jsonFile == "" && compareFile == "" {
 		for i := 0; i < len(targets); i++ {
 			printResult(<-channel, noCPEs, noHostnames, noTags, noVulns, noColor)
 		}
 	}
 
-	wg.Wait()
-	close(channel)
+	go func() {
+		wg.Wait()
+		close(channel)
+	}()
 
 	if jsonFile != "" {
 		saveJson(channel, jsonFile)
 		return
 	}
+
+	if compareFile != "" {
+		newData := make(map[string]Response)
+		for ret := range channel {
+			if ret.IP != "" {
+				newData[ret.IP] = ret
+			}
+		}
+		monitorData(newData, compareFile)
+
+		var jsonDatas []Response
+		for _, jsonData := range newData {
+			if jsonData.IP != "" {
+				jsonDatas = append(jsonDatas, jsonData)
+			}
+		}
+		if len(jsonDatas) != 0 {
+			stringData, _ := json.Marshal(jsonDatas)
+			_ = ioutil.WriteFile(compareFile, stringData, 0644)
+		}
+		return
+	}
+}
+
+
+func monitorData(newData map[string]Response, jsonFile string) {
+
+	var jsonDatas []Response
+	oldData := make(map[string]Response)
+
+	theFile, err := os.Open(jsonFile)
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer theFile.Close()
+
+	byteValue, _ := ioutil.ReadAll(theFile)
+	json.Unmarshal(byteValue, &jsonDatas)
+
+	for _, jsonData := range jsonDatas {
+		oldData[jsonData.IP] = jsonData
+	}
+
+	for _, nData := range newData {
+		oData, isInOld := oldData[nData.IP]
+		if isInOld {
+			compareData(oData, nData)
+		} else {
+			newPorts := nData.Ports
+			ports := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(newPorts)), ", "), "[]")
+			fmt.Println(nData.IP)
+			fmt.Println(ports)
+		}
+	}
+
+	return
+}
+
+
+func compareData(oldData Response, newData Response) {
+	if !reflect.DeepEqual(oldData.Ports, newData.Ports) {
+		for _, nP := range newData.Ports {
+			isNew := true
+			for _, oP := range oldData.Ports {
+				if nP == oP {
+					isNew = false
+				}
+			}
+			if isNew {
+				fmt.Println(newData.IP)
+				fmt.Println(fmt.Sprint(nP) + "\n")
+			}
+		}
+	}
+	if !reflect.DeepEqual(oldData.Vulns, newData.Vulns) {
+		for _, nV := range newData.Vulns {
+			isNew := true
+			for _, oV := range oldData.Vulns {
+				if nV == oV {
+					isNew = false
+				}
+			}
+			if isNew {
+				fmt.Println(newData.IP)
+				fmt.Println(fmt.Sprint(nV) + "\n")
+			}
+		}
+	}
+	return
 }
 
 
