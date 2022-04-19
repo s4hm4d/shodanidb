@@ -51,10 +51,10 @@ func main() {
 	flag.BoolVar(&verbose, "v", false, "Verbose")
 
 	var compareFile string
-	flag.StringVar(&compareFile, "compare", "", "Compare data with a JSON file")
+	flag.StringVar(&compareFile, "compare", "", "Compare new results with a JSON file")
 
 	var url bool
-	flag.BoolVar(&url, "url", false, "Show URLs only")
+	flag.BoolVar(&url, "url", false, "Show only IP and Port")
 
 	flag.Parse()
 
