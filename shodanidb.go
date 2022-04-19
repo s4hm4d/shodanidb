@@ -53,6 +53,9 @@ func main() {
 	var compareFile string
 	flag.StringVar(&compareFile, "compare", "", "Compare data with a JSON file")
 
+	var url bool
+	flag.BoolVar(&url, "url", false, "Show URLs only")
+
 	flag.Parse()
 
 
@@ -88,7 +91,7 @@ func main() {
 
 	if jsonFile == "" && compareFile == "" {
 		for i := 0; i < len(targets); i++ {
-			printResult(<-channel, noCPEs, noHostnames, noTags, noVulns, noColor)
+			printResult(<-channel, noCPEs, noHostnames, noTags, noVulns, noColor, url)
 		}
 	}
 
@@ -276,7 +279,7 @@ func saveJson(chData chan Response, jsonFile string) {
 }
 
 
-func printResult(jsonData Response, noCPEs bool, noHostnames bool, noTags bool, noVulns bool, noColor bool) {
+func printResult(jsonData Response, noCPEs bool, noHostnames bool, noTags bool, noVulns bool, noColor bool, url bool) {
 
 	builder := &strings.Builder{}
 
@@ -284,9 +287,19 @@ func printResult(jsonData Response, noCPEs bool, noHostnames bool, noTags bool, 
 		return
 	}
 
-	fmt.Println(jsonData.IP)
-
 	ports := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(jsonData.Ports)), ", "), "[]")
+
+	if url {
+		if (jsonData.Ports == nil) {
+			return
+		} 
+		for _, port := range jsonData.Ports {
+			fmt.Println(jsonData.IP + ":" + fmt.Sprint(port))
+		}
+		return
+	}
+
+	fmt.Println(jsonData.IP)
 
 	if !noColor {
 		builder.WriteString("Ports: " + aurora.Green(ports).String() + "\n")
