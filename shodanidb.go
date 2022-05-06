@@ -54,7 +54,6 @@ func main() {
 	flag.IntVar(&concurrency, "c", 5, "Concurrency")
 	flag.Parse()
 
-
 	var inputs, targets []string
 
 	if flag.NArg() > 0 {

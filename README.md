@@ -13,7 +13,7 @@ go install -v github.com/s4hm4d/shodanidb@latest
 ## Usage
 
 ```shell
-echo [ip] | shodanidb [options]
+echo <ip> | shodanidb [options]
 
 
 Options:
@@ -26,6 +26,7 @@ Options:
   -compare      Compare new results with a JSON file
   -url          Show only IP and Port
   -v            Verbose mode
+  -c            Concurrency (default 5)
 
 
 # Simple Usage:
