@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"reflect"
+	"sync"
 
 	"github.com/logrusorgru/aurora"
 	"github.com/projectdiscovery/iputil"
@@ -27,35 +27,31 @@ type Response struct {
 	Vulns	[]string
 }
 
+var (
+	urls		bool
+	noCPEs		bool
+	noTags		bool
+	noVulns		bool
+	noColor		bool
+	verbose		bool
+	noHostnames	bool
+	jsonFile	string
+	compareFile	string
+	concurrency	int
+)
+
 func main() {
 
-	var noCPEs bool
 	flag.BoolVar(&noCPEs, "nc", false, "Hide CPEs")
-
-	var noHostnames bool
 	flag.BoolVar(&noHostnames, "nh", false, "Hide hostnames")
-
-	var noTags bool
 	flag.BoolVar(&noTags, "nt", false, "Hide tags")
-
-	var noVulns bool
 	flag.BoolVar(&noVulns, "nv", false, "Hide vulnerabilities")
-
-	var noColor bool
 	flag.BoolVar(&noColor, "nocolor", false, "Disable color in output")
-
-	var jsonFile string
 	flag.StringVar(&jsonFile, "json", "", "Save output to JSON format")
-
-	var verbose bool
 	flag.BoolVar(&verbose, "v", false, "Verbose")
-
-	var compareFile string
 	flag.StringVar(&compareFile, "compare", "", "Compare new results with a JSON file")
-
-	var url bool
-	flag.BoolVar(&url, "url", false, "Show only IP and Port")
-
+	flag.BoolVar(&urls, "url", false, "Show only IP and Port")
+	flag.IntVar(&concurrency, "c", 5, "Concurrency")
 	flag.Parse()
 
 
@@ -73,68 +69,73 @@ func main() {
 		}
 	}
 
-	targets = loadTargets(inputs, verbose)
+	targets = loadTargets(inputs)
 
-	channel := make(chan Response, 10)
+	allData := make([]Response, len(targets))
+	var validData []Response
+
 	var wg sync.WaitGroup
+	var ch = make(chan int, len(targets))
 
-	for i := 0; i < len(targets); i++ {
-		wg.Add(1)
+	wg.Add(concurrency)
 
-		i := i
-
+	for i := 0; i < concurrency; i++ {
 		go func() {
-			jsonData := getData(&wg, targets[i], verbose)
-			channel <- jsonData
-		}()
+            for {
+                a, ok := <-ch
+                if !ok {
+					wg.Done()
+                    return
+                }
+                jsonData := getData(targets[a])
+				allData[a] = jsonData
+            }
+        }()
 	}
 
-	if jsonFile == "" && compareFile == "" {
-		for i := 0; i < len(targets); i++ {
-			printResult(<-channel, noCPEs, noHostnames, noTags, noVulns, noColor, url)
+	for i := 0; i < len(targets); i++ {
+        ch <- i
+    }
+
+	close(ch)
+	wg.Wait()
+
+	for i := 0; i < len(allData); i++ {
+		if allData[i].IP != "" {
+			validData = append(validData, allData[i])
 		}
 	}
 
-	go func() {
-		wg.Wait()
-		close(channel)
-	}()
+	if jsonFile == "" && compareFile == "" {
+		for i := 0; i < len(validData); i++ {
+			printResult(validData[i])
+		}
+	}
 
 	if jsonFile != "" {
-		saveJson(channel, jsonFile)
+		saveJson(validData, jsonFile)
 		return
 	}
 
 	if compareFile != "" {
 		newData := make(map[string]Response)
-		for ret := range channel {
-			if ret.IP != "" {
-				newData[ret.IP] = ret
-			}
+		for _, ret := range validData {
+			newData[ret.IP] = ret
 		}
-		monitorData(newData, compareFile)
+		monitorData(newData)
+		saveJson(validData, compareFile)
 
-		var jsonDatas []Response
-		for _, jsonData := range newData {
-			if jsonData.IP != "" {
-				jsonDatas = append(jsonDatas, jsonData)
-			}
-		}
-		if len(jsonDatas) != 0 {
-			stringData, _ := json.Marshal(jsonDatas)
-			_ = ioutil.WriteFile(compareFile, stringData, 0644)
-		}
 		return
 	}
 }
 
 
-func monitorData(newData map[string]Response, jsonFile string) {
+func monitorData(newData map[string]Response) {
 
 	var jsonDatas []Response
 	oldData := make(map[string]Response)
 
-	theFile, err := os.Open(jsonFile)
+	theFile, err := os.Open(compareFile)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -155,10 +156,9 @@ func monitorData(newData map[string]Response, jsonFile string) {
 			newPorts := nData.Ports
 			ports := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(newPorts)), ", "), "[]")
 			fmt.Println(nData.IP)
-			fmt.Println(ports)
+			fmt.Println(ports + "\n")
 		}
 	}
-
 	return
 }
 
@@ -196,7 +196,7 @@ func compareData(oldData Response, newData Response) {
 }
 
 
-func loadTargets(inputs []string, verbose bool) []string {
+func loadTargets(inputs []string) []string {
 
 	var targets []string
 
@@ -221,9 +221,7 @@ func loadTargets(inputs []string, verbose bool) []string {
 }
 
 
-func getData(wg *sync.WaitGroup, ip string, verbose bool) Response {
-
-	defer wg.Done()
+func getData(ip string) Response {
 
 	res, err := http.Get(
 		fmt.Sprintf("https://internetdb.shodan.io/%s", ip),
@@ -263,23 +261,16 @@ func getData(wg *sync.WaitGroup, ip string, verbose bool) Response {
 }
 
 
-func saveJson(chData chan Response, jsonFile string) {
-
-	var jsonDatas []Response
-	for jsonData := range chData {
-		if jsonData.IP != "" {
-			jsonDatas = append(jsonDatas, jsonData)
-		}
-	}
+func saveJson(jsonDatas []Response, outputFile string) {
 
 	if len(jsonDatas) != 0 {
 		stringData, _ := json.Marshal(jsonDatas)
-		_ = ioutil.WriteFile(jsonFile, stringData, 0644)
+		_ = ioutil.WriteFile(outputFile, stringData, 0644)
 	}
 }
 
 
-func printResult(jsonData Response, noCPEs bool, noHostnames bool, noTags bool, noVulns bool, noColor bool, url bool) {
+func printResult(jsonData Response) {
 
 	builder := &strings.Builder{}
 
@@ -289,7 +280,7 @@ func printResult(jsonData Response, noCPEs bool, noHostnames bool, noTags bool, 
 
 	ports := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(jsonData.Ports)), ", "), "[]")
 
-	if url {
+	if urls {
 		if (jsonData.Ports == nil) {
 			return
 		} 
