@@ -153,9 +153,15 @@ func monitorData(newData map[string]Response) {
 			compareData(oData, nData)
 		} else {
 			newPorts := nData.Ports
-			ports := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(newPorts)), ", "), "[]")
-			fmt.Println(nData.IP)
-			fmt.Println(ports + "\n")
+			if urls {
+				for _, port := range newPorts {
+					fmt.Println(nData.IP + ":" + fmt.Sprint(port))
+				}
+			} else {			
+				ports := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(newPorts)), ", "), "[]")
+				fmt.Println(nData.IP)
+				fmt.Println(ports + "\n")
+			}
 		}
 	}
 	return
@@ -172,8 +178,12 @@ func compareData(oldData Response, newData Response) {
 				}
 			}
 			if isNew {
-				fmt.Println(newData.IP)
-				fmt.Println(fmt.Sprint(nP) + "\n")
+				if urls {
+					fmt.Println(newData.IP + ":" + fmt.Sprint(nP))
+				} else {
+					fmt.Println(newData.IP)
+					fmt.Println(fmt.Sprint(nP) + "\n")
+				}
 			}
 		}
 	}
@@ -186,8 +196,12 @@ func compareData(oldData Response, newData Response) {
 				}
 			}
 			if isNew {
-				fmt.Println(newData.IP)
-				fmt.Println(fmt.Sprint(nV) + "\n")
+				if urls {
+					fmt.Println(newData.IP + ":" + fmt.Sprint(nV))
+				} else {
+					fmt.Println(newData.IP)
+					fmt.Println(fmt.Sprint(nV) + "\n")
+				}
 			}
 		}
 	}
