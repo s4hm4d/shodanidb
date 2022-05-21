@@ -16,6 +16,7 @@ import (
 	"github.com/logrusorgru/aurora"
 	"github.com/projectdiscovery/iputil"
 	"github.com/projectdiscovery/mapcidr"
+	"github.com/Ullaakut/nmap/v2"
 )
 
 type Response struct {
@@ -28,6 +29,7 @@ type Response struct {
 }
 
 var (
+	nmapScan	bool
 	urls		bool
 	noCPEs		bool
 	noTags		bool
@@ -52,6 +54,7 @@ func main() {
 	flag.StringVar(&compareFile, "compare", "", "Compare new results with a JSON file")
 	flag.BoolVar(&urls, "url", false, "Show only IP and Port")
 	flag.IntVar(&concurrency, "c", 5, "Concurrency")
+	flag.BoolVar(&nmapScan, "nmap", false, "Run Nmap Service Detection")
 	flag.Parse()
 
 	var inputs, targets []string
@@ -109,10 +112,21 @@ func main() {
 		for i := 0; i < len(validData); i++ {
 			printResult(validData[i])
 		}
+		if nmapScan {
+			fmt.Println()
+			for i := 0; i < len(validData); i++ {
+				runNmap(validData[i].IP, validData[i].Ports)
+			}
+		}
 	}
 
 	if jsonFile != "" {
 		saveJson(validData, jsonFile)
+		if nmapScan {
+			for i := 0; i < len(validData); i++ {
+				runNmap(validData[i].IP, validData[i].Ports)
+			}
+		}
 		return
 	}
 
@@ -133,6 +147,7 @@ func monitorData(newData map[string]Response) {
 
 	var jsonDatas []Response
 	oldData := make(map[string]Response)
+	newIpPorts := make(map[string][]int32)
 
 	theFile, err := os.Open(compareFile)
 	if err != nil {
@@ -150,9 +165,13 @@ func monitorData(newData map[string]Response) {
 	for _, nData := range newData {
 		oData, isInOld := oldData[nData.IP]
 		if isInOld {
-			compareData(oData, nData)
+			newPorts := compareData(oData, nData)
+			if len(newPorts) != 0 {
+				newIpPorts[nData.IP] = newPorts
+			}
 		} else {
 			newPorts := nData.Ports
+			newIpPorts[nData.IP] = newPorts
 			if urls {
 				for _, port := range newPorts {
 					fmt.Println(nData.IP + ":" + fmt.Sprint(port))
@@ -164,11 +183,20 @@ func monitorData(newData map[string]Response) {
 			}
 		}
 	}
+	if len(newIpPorts) != 0 {
+		fmt.Println()
+	}
+	if nmapScan {
+		for ip, ports := range newIpPorts {
+			runNmap(ip, ports)
+		}
+	}
 	return
 }
 
 
-func compareData(oldData Response, newData Response) {
+func compareData(oldData Response, newData Response) []int32 {
+	var newPorts []int32
 	if !reflect.DeepEqual(oldData.Ports, newData.Ports) {
 		for _, nP := range newData.Ports {
 			isNew := true
@@ -184,6 +212,7 @@ func compareData(oldData Response, newData Response) {
 					fmt.Println(newData.IP)
 					fmt.Println(fmt.Sprint(nP) + "\n")
 				}
+				newPorts = append(newPorts, nP)
 			}
 		}
 	}
@@ -205,7 +234,7 @@ func compareData(oldData Response, newData Response) {
 			}
 		}
 	}
-	return
+	return newPorts
 }
 
 
@@ -348,4 +377,39 @@ func printResult(jsonData Response) {
 	}
 
 	fmt.Println(builder.String())
+}
+
+func runNmap(target string, intPorts []int32) {
+
+	ports := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(intPorts)), ", "), "[]")
+
+	scanner, err := nmap.NewScanner(
+		nmap.WithTargets(target),
+		nmap.WithPorts(ports),
+		nmap.WithServiceInfo(),
+		nmap.WithSkipHostDiscovery(),
+	)
+	if err != nil {
+		log.Fatalf("unable to create nmap scanner: %v", err)
+	}
+
+	result, warnings, err := scanner.Run()
+	if err != nil {
+		log.Fatalf("unable to run nmap scan: %v", err)
+	}
+
+	if warnings != nil {
+		if verbose {
+			log.Printf("Warnings: \n %v", warnings)
+		}
+    }
+
+	for _, host := range result.Hosts {
+		if len(host.Ports) == 0 || len(host.Addresses) == 0 {
+			continue
+		}
+		for _, port := range host.Ports {
+			fmt.Printf("%s:%d/%s %s %s %s %s %s\n", host.Addresses[0], port.ID, port.Protocol, port.State, port.Service.Name, port.Service.Product, port.Service.ExtraInfo, port.Service.Version)
+		}
+	}
 }
