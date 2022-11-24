@@ -30,6 +30,7 @@ type Response struct {
 
 var (
 	nmapScan	bool
+	script		bool
 	urls		bool
 	noCPEs		bool
 	noTags		bool
@@ -55,6 +56,7 @@ func main() {
 	flag.BoolVar(&urls, "url", false, "Show only IP and Port")
 	flag.IntVar(&concurrency, "c", 5, "Concurrency")
 	flag.BoolVar(&nmapScan, "nmap", false, "Run Nmap Service Detection")
+	flag.BoolVar(&script, "script", false, "Run Nmap Scripts")
 	flag.Parse()
 
 	var inputs, targets []string
@@ -383,12 +385,18 @@ func runNmap(target string, intPorts []int32) {
 
 	ports := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(intPorts)), ", "), "[]")
 
-	scanner, err := nmap.NewScanner(
+	var options = []nmap.Option{
 		nmap.WithTargets(target),
 		nmap.WithPorts(ports),
 		nmap.WithServiceInfo(),
-		nmap.WithSkipHostDiscovery(),
-	)
+		nmap.WithSkipHostDiscovery(),		
+	}
+
+	if script {
+		options = append(options, nmap.WithDefaultScript())
+	}
+
+	scanner, err := nmap.NewScanner(options...)
 	if err != nil {
 		log.Fatalf("unable to create nmap scanner: %v", err)
 	}
@@ -410,6 +418,12 @@ func runNmap(target string, intPorts []int32) {
 		}
 		for _, port := range host.Ports {
 			fmt.Printf("%s:%d/%s %s %s %s %s %s\n", host.Addresses[0], port.ID, port.Protocol, port.State, port.Service.Name, port.Service.Product, port.Service.ExtraInfo, port.Service.Version)
+			if script {
+				for _, service := range port.Scripts {
+					fmt.Printf(" %s: %s\n", service.ID, service.Output)
+				}
+				fmt.Println()
+			}
 		}
 	}
 }

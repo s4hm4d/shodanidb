@@ -28,6 +28,7 @@ Options:
   -v            Verbose mode
   -c            Concurrency (default 5)
   -nmap         Run Nmap Service Detection
+  -script       Run Nmap Scripts
 
 
 # Simple Usage:
@@ -71,6 +72,7 @@ It can be used with the other switches:
 echo 149.202.182.140 | shodanidb -nmap -compare output.json
 echo 149.202.182.140 | shodanidb -url -compare output.json
 echo 149.202.182.140 | shodanidb -url -nmap -compare output.json
+echo 149.202.182.140 | shodanidb -url -nmap -script -compare output.json
 ```
 
 
@@ -90,6 +92,12 @@ It can be used with the other switches:
 echo 149.202.182.140 | shodanidb -nmap
 echo 149.202.182.140 | shodanidb -url -nmap
 echo 149.202.182.140 | shodanidb -nmap -compare output.json
+```
+
+Also it can be used with `-script` switch. It's equals to `-sC` in the nmap and run the nmap scripts.
+
+```shell
+echo 149.202.182.140 | shodanidb -nmap -script
 ```
 
 
