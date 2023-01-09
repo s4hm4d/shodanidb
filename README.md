@@ -29,6 +29,7 @@ Options:
   -c            Concurrency (default 5)
   -nmap         Run Nmap Service Detection
   -script       Run Nmap Scripts
+  -aggregate    Enable Aggregate
 
 
 # Simple Usage:
@@ -73,6 +74,7 @@ echo 149.202.182.140 | shodanidb -nmap -compare output.json
 echo 149.202.182.140 | shodanidb -url -compare output.json
 echo 149.202.182.140 | shodanidb -url -nmap -compare output.json
 echo 149.202.182.140 | shodanidb -url -nmap -script -compare output.json
+echo 149.202.182.140 | shodanidb -url -nmap -script -compare output.json -aggregate
 ```
 
 

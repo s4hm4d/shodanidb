@@ -9,38 +9,39 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"reflect"
+	"strings"
 	"sync"
 
+	"github.com/Ullaakut/nmap/v2"
 	"github.com/logrusorgru/aurora"
 	"github.com/projectdiscovery/iputil"
 	"github.com/projectdiscovery/mapcidr"
-	"github.com/Ullaakut/nmap/v2"
 )
 
 type Response struct {
-	CPES	[]string
-	Hostnames	[]string
-	IP	string
-	Ports	[]int32
-	Tags	[]string
-	Vulns	[]string
+	CPES      []string
+	Hostnames []string
+	IP        string
+	Ports     []int32
+	Tags      []string
+	Vulns     []string
 }
 
 var (
-	nmapScan	bool
-	script		bool
-	urls		bool
-	noCPEs		bool
-	noTags		bool
-	noVulns		bool
-	noColor		bool
-	verbose		bool
-	noHostnames	bool
-	jsonFile	string
-	compareFile	string
-	concurrency	int
+	nmapScan    bool
+	script      bool
+	urls        bool
+	noCPEs      bool
+	noTags      bool
+	noVulns     bool
+	noColor     bool
+	verbose     bool
+	noHostnames bool
+	jsonFile    string
+	compareFile string
+	concurrency int
+	aggregate   bool
 )
 
 func main() {
@@ -57,6 +58,7 @@ func main() {
 	flag.IntVar(&concurrency, "c", 5, "Concurrency")
 	flag.BoolVar(&nmapScan, "nmap", false, "Run Nmap Service Detection")
 	flag.BoolVar(&script, "script", false, "Run Nmap Scripts")
+	flag.BoolVar(&aggregate, "aggregate", false, "Enable aggregation")
 	flag.Parse()
 
 	var inputs, targets []string
@@ -85,21 +87,21 @@ func main() {
 
 	for i := 0; i < concurrency; i++ {
 		go func() {
-            for {
-                a, ok := <-ch
-                if !ok {
+			for {
+				a, ok := <-ch
+				if !ok {
 					wg.Done()
-                    return
-                }
-                jsonData := getData(targets[a])
+					return
+				}
+				jsonData := getData(targets[a])
 				allData[a] = jsonData
-            }
-        }()
+			}
+		}()
 	}
 
 	for i := 0; i < len(targets); i++ {
-        ch <- i
-    }
+		ch <- i
+	}
 
 	close(ch)
 	wg.Wait()
@@ -133,11 +135,11 @@ func main() {
 	}
 
 	if compareFile != "" {
-		newData := make(map[string]Response)
-		for _, ret := range validData {
-			newData[ret.IP] = ret
+		mergedData := monitorData(validData)
+		if aggregate {
+			saveJson(mergedData, compareFile)
+			return
 		}
-		monitorData(newData)
 		saveJson(validData, compareFile)
 
 		return
@@ -145,11 +147,17 @@ func main() {
 }
 
 
-func monitorData(newData map[string]Response) {
+func monitorData(validData []Response) []Response {
 
 	var jsonDatas []Response
+	var mergedData []Response
 	oldData := make(map[string]Response)
+	newData := make(map[string]Response)
 	newIpPorts := make(map[string][]int32)
+
+	for _, ret := range validData {
+		newData[ret.IP] = ret
+	}
 
 	theFile, err := os.Open(compareFile)
 	if err != nil {
@@ -167,24 +175,41 @@ func monitorData(newData map[string]Response) {
 	for _, nData := range newData {
 		oData, isInOld := oldData[nData.IP]
 		if isInOld {
+			mergedData = append(mergedData, Response{
+				removeDuplicate(append(oData.CPES, nData.CPES...)),
+				removeDuplicate(append(oData.Hostnames, nData.Hostnames...)),
+				oData.IP,
+				removeDuplicate(append(oData.Ports, nData.Ports...)),
+				removeDuplicate(append(oData.Tags, nData.Tags...)),
+				removeDuplicate(append(oData.Vulns, nData.Vulns...)),
+			})
 			newPorts := compareData(oData, nData)
 			if len(newPorts) != 0 {
 				newIpPorts[nData.IP] = newPorts
 			}
 		} else {
+			mergedData = append(mergedData, nData)
 			newPorts := nData.Ports
 			newIpPorts[nData.IP] = newPorts
 			if urls {
 				for _, port := range newPorts {
 					fmt.Println(nData.IP + ":" + fmt.Sprint(port))
 				}
-			} else {			
+			} else {
 				ports := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(newPorts)), ", "), "[]")
 				fmt.Println(nData.IP)
 				fmt.Println(ports + "\n")
 			}
 		}
 	}
+
+	for _, oData := range oldData {
+		_, isInNew := newData[oData.IP]
+		if !isInNew {
+			mergedData = append(mergedData, oData)
+		}
+	}
+
 	if len(newIpPorts) != 0 {
 		fmt.Println()
 	}
@@ -193,7 +218,7 @@ func monitorData(newData map[string]Response) {
 			runNmap(ip, ports)
 		}
 	}
-	return
+	return mergedData
 }
 
 
@@ -275,7 +300,7 @@ func getData(ip string) Response {
 		if verbose {
 			log.Printf("Couldn't connect to the server! (%s)", ip)
 			log.Printf("%s\n", err)
-		}		
+		}
 		return Response{}
 	}
 
@@ -325,9 +350,9 @@ func printResult(jsonData Response) {
 	ports := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(jsonData.Ports)), ", "), "[]")
 
 	if urls {
-		if (jsonData.Ports == nil) {
+		if jsonData.Ports == nil {
 			return
-		} 
+		}
 		for _, port := range jsonData.Ports {
 			fmt.Println(jsonData.IP + ":" + fmt.Sprint(port))
 		}
@@ -342,7 +367,7 @@ func printResult(jsonData Response) {
 		builder.WriteString("Ports: " + ports + "\n")
 	}
 
-	if (!noCPEs && len(jsonData.CPES) > 0) {
+	if !noCPEs && len(jsonData.CPES) > 0 {
 		cpes := strings.Join(jsonData.CPES, ", ")
 		if !noColor {
 			builder.WriteString("CPEs: " + aurora.Yellow(cpes).String() + "\n")
@@ -351,7 +376,7 @@ func printResult(jsonData Response) {
 		}
 	}
 
-	if (!noVulns && len(jsonData.Vulns) > 0) {
+	if !noVulns && len(jsonData.Vulns) > 0 {
 		vulns := strings.Join(jsonData.Vulns, ", ")
 		if !noColor {
 			builder.WriteString("Vulnerabilities: " + aurora.Red(vulns).String() + "\n")
@@ -360,7 +385,7 @@ func printResult(jsonData Response) {
 		}
 	}
 
-	if (!noHostnames && len(jsonData.Hostnames) > 0) {
+	if !noHostnames && len(jsonData.Hostnames) > 0 {
 		hostnames := strings.Join(jsonData.Hostnames, ", ")
 		if !noColor {
 			builder.WriteString("Hostnames: " + aurora.Blue(hostnames).String() + "\n")
@@ -369,7 +394,7 @@ func printResult(jsonData Response) {
 		}
 	}
 
-	if (!noTags && len(jsonData.Tags) > 0) {
+	if !noTags && len(jsonData.Tags) > 0 {
 		tags := strings.Join(jsonData.Tags, ", ")
 		if !noColor {
 			builder.WriteString("Tags: " + aurora.Magenta(tags).String() + "\n")
@@ -389,7 +414,7 @@ func runNmap(target string, intPorts []int32) {
 		nmap.WithTargets(target),
 		nmap.WithPorts(ports),
 		nmap.WithServiceInfo(),
-		nmap.WithSkipHostDiscovery(),		
+		nmap.WithSkipHostDiscovery(),
 	}
 
 	if script {
@@ -410,7 +435,7 @@ func runNmap(target string, intPorts []int32) {
 		if verbose {
 			log.Printf("Warnings: \n %v", warnings)
 		}
-    }
+	}
 
 	for _, host := range result.Hosts {
 		if len(host.Ports) == 0 || len(host.Addresses) == 0 {
@@ -426,4 +451,17 @@ func runNmap(target string, intPorts []int32) {
 			}
 		}
 	}
+}
+
+
+func removeDuplicate[T string | int32](sliceList []T) []T {
+	allKeys := make(map[T]bool)
+	list := []T{}
+	for _, item := range sliceList {
+		if _, value := allKeys[item]; !value {
+			allKeys[item] = true
+			list = append(list, item)
+		}
+	}
+	return list
 }
